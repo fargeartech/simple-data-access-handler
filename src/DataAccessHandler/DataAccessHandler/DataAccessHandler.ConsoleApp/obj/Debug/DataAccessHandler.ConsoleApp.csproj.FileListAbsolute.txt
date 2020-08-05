@@ -1,0 +1,1 @@
+E:\Blogs\Technical\2. Data Access Layer\DataAccessHandler\DataAccessHandler.ConsoleApp\bin\Debug\DataAccessHandler.ConsoleApp.exe.config
