@@ -5,3 +5,4 @@ src/packages/System.Runtime.CompilerServices.Unsafe.4.6.0/THIRD-PARTY-NOTICES.TX
 src/packages/System.Runtime.CompilerServices.Unsafe.4.6.0/useSharedDesignerContext.txt
 src/packages/System.Numerics.Vectors.4.4.0/THIRD-PARTY-NOTICES.TXT
 src/packages/System.Numerics.Vectors.4.4.0/useSharedDesignerContext.txt
+*.cache
