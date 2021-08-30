@@ -20,11 +20,20 @@ namespace DBHandler.Implementation
         private IDBWrapper database;
         private string providerName;
         private List<IDbDataParameter> parameters; //SO TIAP KALI USER CREATE INSTANCE ..AKAN RESET 
+        private IDbCommand _dbCommand;
         public DBWrapper(string connectionStringName)
         {
             dbFactory = new DBWrapperFactory(connectionStringName);
             database = dbFactory.CreateDatabase();
             providerName = dbFactory.GetProviderName();
+            parameters = new List<IDbDataParameter>(); //RESET
+        }
+
+        public DBWrapper(string ConString, string _providerName)
+        {
+            dbFactory = new DBWrapperFactory(ConString, _providerName);
+            database = dbFactory.CreateDatabase();
+            providerName = _providerName;
             parameters = new List<IDbDataParameter>(); //RESET
         }
 
@@ -88,19 +97,20 @@ namespace DBHandler.Implementation
         public void ClearParameters()
         {
             parameters.Clear();
-
+            if (_dbCommand != null && _dbCommand.Parameters.Count > 0)
+                _dbCommand.Parameters.Clear();
         }
 
         public DataTable GetDataTable(string commandText, CommandType commandType)
         {
             var connection = GetDatabaseConnection();
-            using (var command = database.CreateCommand(commandText, commandType, connection))
+            using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
             {
                 if (parameters.Count > 0)
                 {
                     Parallel.ForEach(parameters, (parameter) =>
                      {
-                         command.Parameters.Add(parameter);
+                         _dbCommand.Parameters.Add(parameter);
                      });
                 }
 
@@ -114,13 +124,13 @@ namespace DBHandler.Implementation
         public DataSet GetDataSet(string commandText, CommandType commandType)
         {
             var connection = GetDatabaseConnection();
-            using (var command = database.CreateCommand(commandText, commandType, connection))
+            using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
             {
                 if (parameters.Count > 0)
                 {
                     Parallel.ForEach(parameters, (parameter) =>
                     {
-                        command.Parameters.Add(parameter);
+                        _dbCommand.Parameters.Add(parameter);
                     });
                 }
 
@@ -136,48 +146,48 @@ namespace DBHandler.Implementation
         {
             IDataReader reader = null;
             var connection = GetDatabaseConnection();
-            var command = database.CreateCommand(commandText, commandType, connection);
+            _dbCommand = database.CreateCommand(commandText, commandType, connection);
             if (parameters.Count > 0)
             {
                 Parallel.ForEach(parameters, (parameter) =>
                 {
-                    command.Parameters.Add(parameter);
+                    _dbCommand.Parameters.Add(parameter);
                 });
             }
 
-            reader = command.ExecuteReader();
+            reader = _dbCommand.ExecuteReader();
             return reader;
         }
 
         public void Delete(string commandText, CommandType commandType)
         {
             var connection = GetDatabaseConnection();
-            using (var command = database.CreateCommand(commandText, commandType, connection))
+            using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
             {
                 if (parameters.Count > 0)
                 {
                     Parallel.ForEach(parameters, (parameter) =>
                     {
-                        command.Parameters.Add(parameter);
+                        _dbCommand.Parameters.Add(parameter);
                     });
                 }
-                command.ExecuteNonQuery();
+                _dbCommand.ExecuteNonQuery();
             }
         }
 
         public void Insert(string commandText, CommandType commandType)
         {
             var connection = GetDatabaseConnection();
-            using (var command = database.CreateCommand(commandText, commandType, connection))
+            using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
             {
                 if (parameters.Count > 0)
                 {
                     Parallel.ForEach(parameters, (parameter) =>
                     {
-                        command.Parameters.Add(parameter);
+                        _dbCommand.Parameters.Add(parameter);
                     });
                 }
-                command.ExecuteNonQuery();
+                _dbCommand.ExecuteNonQuery();
             }
         }
 
@@ -185,18 +195,17 @@ namespace DBHandler.Implementation
         {
             lastId = 0;
             var connection = GetDatabaseConnection();
-            using (var command = database.CreateCommand(commandText, commandType, connection))
+            using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
             {
                 if (parameters.Count > 0)
                 {
                     Parallel.ForEach(parameters, (parameter) =>
                     {
-                        command.Parameters.Add(parameter);
+                        _dbCommand.Parameters.Add(parameter);
                     });
                 }
-                object newId = command.ExecuteScalar();
+                object newId = _dbCommand.ExecuteScalar();
                 lastId = Convert.ToInt32(newId);
-
                 return lastId;
             }
         }
@@ -205,16 +214,16 @@ namespace DBHandler.Implementation
         {
             lastId = 0;
             var connection = GetDatabaseConnection();
-            using (var command = database.CreateCommand(commandText, commandType, connection))
+            using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
             {
                 if (parameters.Count > 0)
                 {
                     Parallel.ForEach(parameters, (parameter) =>
                     {
-                        command.Parameters.Add(parameter);
+                        _dbCommand.Parameters.Add(parameter);
                     });
                 }
-                object newId = command.ExecuteScalar();
+                object newId = _dbCommand.ExecuteScalar();
                 lastId = Convert.ToInt64(newId);
                 return lastId;
             }
@@ -228,19 +237,19 @@ namespace DBHandler.Implementation
 
                 transactionScope = connection.BeginTransaction();
 
-                using (var command = database.CreateCommand(commandText, commandType, connection))
+                using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
                 {
                     if (parameters.Count > 0)
                     {
                         Parallel.ForEach(parameters, (parameter) =>
                         {
-                            command.Parameters.Add(parameter);
+                            _dbCommand.Parameters.Add(parameter);
                         });
                     }
 
                     try
                     {
-                        command.ExecuteNonQuery();
+                        _dbCommand.ExecuteNonQuery();
                         transactionScope.Commit();
                     }
                     catch (Exception)
@@ -250,6 +259,7 @@ namespace DBHandler.Implementation
                     finally
                     {
                         connection.Dispose();
+                        _dbCommand.Parameters.Clear();
                     }
                 }
             }
@@ -263,19 +273,19 @@ namespace DBHandler.Implementation
 
                 transactionScope = connection.BeginTransaction(isolationLevel);
 
-                using (var command = database.CreateCommand(commandText, commandType, connection))
+                using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
                 {
                     if (parameters.Count > 0)
                     {
                         Parallel.ForEach(parameters, (parameter) =>
                         {
-                            command.Parameters.Add(parameter);
+                            _dbCommand.Parameters.Add(parameter);
                         });
                     }
 
                     try
                     {
-                        command.ExecuteNonQuery();
+                        _dbCommand.ExecuteNonQuery();
                         transactionScope.Commit();
                     }
                     catch (Exception)
@@ -285,6 +295,7 @@ namespace DBHandler.Implementation
                     finally
                     {
                         connection.Close();
+                        _dbCommand.Parameters.Clear();
                     }
                 }
             }
@@ -293,16 +304,16 @@ namespace DBHandler.Implementation
         public void Update(string commandText, CommandType commandType)
         {
             var connection = GetDatabaseConnection();
-            using (var command = database.CreateCommand(commandText, commandType, connection))
+            using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
             {
                 if (parameters.Count > 0)
                 {
                     Parallel.ForEach(parameters, (parameter) =>
                     {
-                        command.Parameters.Add(parameter);
+                        _dbCommand.Parameters.Add(parameter);
                     });
                 }
-                command.ExecuteNonQuery();
+                _dbCommand.ExecuteNonQuery();
             }
         }
 
@@ -313,19 +324,19 @@ namespace DBHandler.Implementation
             {
                 transactionScope = connection.BeginTransaction();
 
-                using (var command = database.CreateCommand(commandText, commandType, connection))
+                using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
                 {
                     if (parameters.Count > 0)
                     {
                         Parallel.ForEach(parameters, (parameter) =>
                         {
-                            command.Parameters.Add(parameter);
+                            _dbCommand.Parameters.Add(parameter);
                         });
                     }
 
                     try
                     {
-                        command.ExecuteNonQuery();
+                        _dbCommand.ExecuteNonQuery();
                         transactionScope.Commit();
                     }
                     catch (Exception)
@@ -347,19 +358,19 @@ namespace DBHandler.Implementation
             {
                 transactionScope = connection.BeginTransaction(isolationLevel);
 
-                using (var command = database.CreateCommand(commandText, commandType, connection))
+                using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
                 {
                     if (parameters.Count > 0)
                     {
                         Parallel.ForEach(parameters, (parameter) =>
                         {
-                            command.Parameters.Add(parameter);
+                            _dbCommand.Parameters.Add(parameter);
                         });
                     }
 
                     try
                     {
-                        command.ExecuteNonQuery();
+                        _dbCommand.ExecuteNonQuery();
                         transactionScope.Commit();
                     }
                     catch (Exception)
@@ -384,16 +395,16 @@ namespace DBHandler.Implementation
         public T GetScalarValue<T>(string commandText, CommandType commandType)
         {
             var connection = GetDatabaseConnection();
-            using (var command = database.CreateCommand(commandText, commandType, connection))
+            using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
             {
                 if (parameters.Count > 0)
                 {
                     Parallel.ForEach(parameters, (parameter) =>
                     {
-                        command.Parameters.Add(parameter);
+                        _dbCommand.Parameters.Add(parameter);
                     });
                 }
-                var result = command.ExecuteScalar();
+                var result = _dbCommand.ExecuteScalar();
                 if (Convert.IsDBNull(result))
                     return default(T);
                 if (result is T) // just unbox
@@ -406,13 +417,13 @@ namespace DBHandler.Implementation
         public DataTable ExecuteDatatableSQL(string sql)
         {
             var connection = GetDatabaseConnection();
-            using (var command = database.CreateCommand(sql, CommandType.Text, connection))
+            using (_dbCommand = database.CreateCommand(sql, CommandType.Text, connection))
             {
                 if (parameters.Count > 0)
                 {
                     Parallel.ForEach(parameters, (parameter) =>
                     {
-                        command.Parameters.Add(parameter);
+                        _dbCommand.Parameters.Add(parameter);
                     });
                 }
 
@@ -427,15 +438,15 @@ namespace DBHandler.Implementation
         {
             IDataReader reader = null;
             var connection = GetDatabaseConnection();
-            var command = database.CreateCommand(commandText, CommandType.Text, connection);
+            _dbCommand = database.CreateCommand(commandText, CommandType.Text, connection);
             if (parameters.Count > 0)
             {
                 Parallel.ForEach(parameters, (parameter) =>
                 {
-                    command.Parameters.Add(parameter);
+                    _dbCommand.Parameters.Add(parameter);
                 });
             }
-            reader = command.ExecuteReader();
+            reader = _dbCommand.ExecuteReader();
 
             return reader;
         }
@@ -447,10 +458,13 @@ namespace DBHandler.Implementation
             database.Dispose();
             if (_dbConnection != null)
                 _dbConnection.Dispose();
+            if (_dbCommand != null)
+                _dbCommand.Dispose();
             _dbConnection = null;
             dbFactory = null;
             database = null;
             parameters = null;
+            _dbCommand = null;
         }
     }
 }
