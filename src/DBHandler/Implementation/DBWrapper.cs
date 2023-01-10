@@ -2,7 +2,11 @@
 using DBHandler.Interfaces;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Data;
+using System.Data.Common;
+using System.Data.SqlClient;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace DBHandler.Implementation
@@ -13,12 +17,14 @@ namespace DBHandler.Implementation
     /// UPDATED : -
     /// VERSION 1.0
     /// </summary>
-    public class DBWrapper : IDisposable
+    public sealed class DBWrapper : IDisposable
     {
+        private const int _defaultBulkBatch = 4999;
+        private const string _system = "System";
         private DBWrapperFactory dbFactory;
         private IDbConnection _dbConnection;
         private IDBWrapper database;
-        private string providerName;
+        private readonly string providerName;
         private List<IDbDataParameter> parameters; //SO TIAP KALI USER CREATE INSTANCE ..AKAN RESET 
         private IDbCommand _dbCommand;
         public DBWrapper(string connectionStringName)
@@ -29,11 +35,11 @@ namespace DBHandler.Implementation
             parameters = new List<IDbDataParameter>(); //RESET
         }
 
-        public DBWrapper(string ConString, string _providerName)
+        public DBWrapper(string ConString, string providerNames)
         {
-            dbFactory = new DBWrapperFactory(ConString, _providerName);
+            dbFactory = new DBWrapperFactory(ConString, providerNames);
+            providerName = providerNames;
             database = dbFactory.CreateDatabase();
-            providerName = _providerName;
             parameters = new List<IDbDataParameter>(); //RESET
         }
 
@@ -101,7 +107,8 @@ namespace DBHandler.Implementation
                 _dbCommand.Parameters.Clear();
         }
 
-        public DataTable GetDataTable(string commandText, CommandType commandType)
+        #region "get datatable"
+        private DataTable GetDataTable(string commandText, CommandType commandType)
         {
             var connection = GetDatabaseConnection();
             using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
@@ -109,9 +116,9 @@ namespace DBHandler.Implementation
                 if (parameters.Count > 0)
                 {
                     Parallel.ForEach(parameters, (parameter) =>
-                     {
-                         _dbCommand.Parameters.Add(parameter);
-                     });
+                    {
+                        _dbCommand.Parameters.Add(parameter);
+                    });
                 }
 
                 var dataset = new DataSet();
@@ -121,7 +128,45 @@ namespace DBHandler.Implementation
             }
         }
 
-        public DataSet GetDataSet(string commandText, CommandType commandType)
+        public Task<DataTable> GetDataTableTextAsync(string commandText, CommandType commandType)
+        {
+            var connection = GetDatabaseConnection();
+            using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
+            {
+                if (parameters.Count > 0)
+                {
+                    Parallel.ForEach(parameters, (parameter) =>
+                    {
+                        _dbCommand.Parameters.Add(parameter);
+                    });
+                }
+
+                var dataset = new DataSet();
+                var dataAdaper = database.CreateAdapter();
+                dataAdaper.Fill(dataset);
+                return Task.FromResult(dataset.Tables[0]);
+            }
+        }
+
+        public DataTable GetDataTableText(string query)
+        {
+            return GetDataTable(query, CommandType.Text);
+        }
+
+        public DataTable GetDataTableSP(string spName)
+        {
+            return GetDataTable(spName, CommandType.StoredProcedure);
+        }
+
+        public async Task<DataTable> GetDataTableSPAsync(string query)
+        {
+            return await GetDataTableTextAsync(query, CommandType.StoredProcedure);
+        }
+        #endregion
+
+        #region "get dataset"
+
+        private DataSet GetDataSet(string commandText, CommandType commandType)
         {
             var connection = GetDatabaseConnection();
             using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
@@ -142,7 +187,46 @@ namespace DBHandler.Implementation
             }
         }
 
-        public IDataReader GetDataReader(string commandText, CommandType commandType)
+        private Task<DataSet> GetDataSetAsync(string commandText, CommandType commandType)
+        {
+            var connection = GetDatabaseConnection();
+            using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
+            {
+                if (parameters.Count > 0)
+                {
+                    Parallel.ForEach(parameters, (parameter) =>
+                    {
+                        _dbCommand.Parameters.Add(parameter);
+                    });
+                }
+
+                var dataset = new DataSet();
+                var dataAdaper = database.CreateAdapter();
+                dataAdaper.Fill(dataset);
+
+                return Task.FromResult(dataset);
+            }
+        }
+
+        public DataSet GetDataSetSP(string spName)
+        {
+            return GetDataSet(spName, CommandType.StoredProcedure);
+        }
+
+        public async Task<DataSet> GetDataSetSPAsync(string query)
+        {
+            return await GetDataSetAsync(query, CommandType.StoredProcedure);
+        }
+
+        public async Task<DataSet> GetDataSetTextAsync(string query)
+        {
+            return await GetDataSetAsync(query, CommandType.Text);
+        }
+        #endregion
+
+        #region "get datareader"
+
+        private DbDataReader GetDataReader(string commandText, CommandType commandType)
         {
             IDataReader reader = null;
             var connection = GetDatabaseConnection();
@@ -156,10 +240,49 @@ namespace DBHandler.Implementation
             }
 
             reader = _dbCommand.ExecuteReader();
-            return reader;
+            return (DbDataReader)reader;
         }
 
-        public void Delete(string commandText, CommandType commandType)
+        private Task<DbDataReader> GetDataReaderAsync(string commandText, CommandType commandType)
+        {
+            IDataReader reader = null;
+            var connection = GetDatabaseConnection();
+            _dbCommand = database.CreateCommand(commandText, commandType, connection);
+            if (parameters.Count > 0)
+            {
+                Parallel.ForEach(parameters, (parameter) =>
+                {
+                    _dbCommand.Parameters.Add(parameter);
+                });
+            }
+
+            reader = _dbCommand.ExecuteReader();
+            return Task.FromResult((DbDataReader)reader);
+        }
+
+        public DbDataReader GetDataReaderSP(string spName)
+        {
+            return GetDataReader(spName, CommandType.StoredProcedure);
+        }
+
+        public DbDataReader GetDataReaderText(string query)
+        {
+            return GetDataReader(query, CommandType.StoredProcedure);
+        }
+
+        public async Task<DbDataReader> GetDataReaderSPAsync(string spName)
+        {
+            return await GetDataReaderAsync(spName, CommandType.StoredProcedure);
+        }
+
+        public async Task<DbDataReader> GetDataReaderTextAsync(string query)
+        {
+            return await GetDataReaderAsync(query, CommandType.Text);
+        }
+        #endregion
+
+        #region "delete"
+        private void Delete(string commandText, CommandType commandType)
         {
             var connection = GetDatabaseConnection();
             using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
@@ -175,10 +298,91 @@ namespace DBHandler.Implementation
             }
         }
 
-        public void Insert(string commandText, CommandType commandType)
+        private Task DeleteAsync(string commandText, CommandType commandType)
         {
             var connection = GetDatabaseConnection();
             using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
+            {
+                if (parameters.Count > 0)
+                {
+                    Parallel.ForEach(parameters, (parameter) =>
+                    {
+                        _dbCommand.Parameters.Add(parameter);
+                    });
+                }
+                return Task.FromResult(_dbCommand.ExecuteNonQuery());
+            }
+        }
+
+        public void DeleteSP(string spName)
+        {
+            Delete(spName, CommandType.StoredProcedure);
+        }
+
+        public void DeleteText(string query)
+        {
+            Delete(query, CommandType.Text);
+        }
+
+
+        public async Task DeleteSPAsync(string spName)
+        {
+            await DeleteAsync(spName, CommandType.StoredProcedure);
+        }
+
+        public async Task DeleteTextAsync(string query)
+        {
+            await DeleteAsync(query, CommandType.Text);
+        }
+        #endregion
+
+        public int InsertWithReturn(string commandText, CommandType commandType, out int lastId)
+        {
+            int result = GetScalarValue<int>(commandText, commandType);
+            lastId = Convert.ToInt32(result);
+            return lastId;
+            //var connection = GetDatabaseConnection();
+            //using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
+            //{
+            //    if (parameters.Count > 0)
+            //    {
+            //        Parallel.ForEach(parameters, (parameter) =>
+            //        {
+            //            _dbCommand.Parameters.Add(parameter);
+            //        });
+            //    }
+            //    object newId = _dbCommand.ExecuteScalar();
+            //    lastId = Convert.ToInt32(newId);
+            //    return lastId;
+            //}
+        }
+
+        public long InsertWithReturn(string commandText, CommandType commandType, out long lastId)
+        {
+            long result = GetScalarValue<long>(commandText, commandType);
+            lastId = Convert.ToInt64(result);
+            return lastId;
+            //var connection = GetDatabaseConnection();
+            //using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
+            //{
+            //    if (parameters.Count > 0)
+            //    {
+            //        Parallel.ForEach(parameters, (parameter) =>
+            //        {
+            //            _dbCommand.Parameters.Add(parameter);
+            //        });
+            //    }
+            //    object newId = _dbCommand.ExecuteScalar();
+            //    lastId = Convert.ToInt64(newId);
+            //    return lastId;
+            //}
+        }
+
+        #region "Exec Non Query Command"
+        public void ExecuteSP(string commandText)
+        {
+            var connection = GetDatabaseConnection();
+            using (_dbCommand = database.CreateCommand(commandText, CommandType.StoredProcedure, connection))
             {
                 if (parameters.Count > 0)
                 {
@@ -191,11 +395,10 @@ namespace DBHandler.Implementation
             }
         }
 
-        public int Insert(string commandText, CommandType commandType, out int lastId)
+        public Task ExecuteSPAsync(string spName)
         {
-            lastId = 0;
             var connection = GetDatabaseConnection();
-            using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
+            using (_dbCommand = database.CreateCommand(spName, CommandType.StoredProcedure, connection))
             {
                 if (parameters.Count > 0)
                 {
@@ -204,107 +407,14 @@ namespace DBHandler.Implementation
                         _dbCommand.Parameters.Add(parameter);
                     });
                 }
-                object newId = _dbCommand.ExecuteScalar();
-                lastId = Convert.ToInt32(newId);
-                return lastId;
+                return Task.FromResult(_dbCommand.ExecuteNonQuery());
             }
         }
 
-        public long Insert(string commandText, CommandType commandType, out long lastId)
-        {
-            lastId = 0;
-            var connection = GetDatabaseConnection();
-            using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
-            {
-                if (parameters.Count > 0)
-                {
-                    Parallel.ForEach(parameters, (parameter) =>
-                    {
-                        _dbCommand.Parameters.Add(parameter);
-                    });
-                }
-                object newId = _dbCommand.ExecuteScalar();
-                lastId = Convert.ToInt64(newId);
-                return lastId;
-            }
-        }
-
-        public void InsertWithTransaction(string commandText, CommandType commandType)
-        {
-            IDbTransaction transactionScope = null;
-            using (var connection = GetDatabaseConnection())
-            {
-
-                transactionScope = connection.BeginTransaction();
-
-                using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
-                {
-                    if (parameters.Count > 0)
-                    {
-                        Parallel.ForEach(parameters, (parameter) =>
-                        {
-                            _dbCommand.Parameters.Add(parameter);
-                        });
-                    }
-
-                    try
-                    {
-                        _dbCommand.ExecuteNonQuery();
-                        transactionScope.Commit();
-                    }
-                    catch (Exception)
-                    {
-                        transactionScope.Rollback();
-                    }
-                    finally
-                    {
-                        connection.Dispose();
-                        _dbCommand.Parameters.Clear();
-                    }
-                }
-            }
-        }
-
-        public void InsertWithTransaction(string commandText, CommandType commandType, IsolationLevel isolationLevel)
-        {
-            IDbTransaction transactionScope = null;
-            using (var connection = GetDatabaseConnection())
-            {
-
-                transactionScope = connection.BeginTransaction(isolationLevel);
-
-                using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
-                {
-                    if (parameters.Count > 0)
-                    {
-                        Parallel.ForEach(parameters, (parameter) =>
-                        {
-                            _dbCommand.Parameters.Add(parameter);
-                        });
-                    }
-
-                    try
-                    {
-                        _dbCommand.ExecuteNonQuery();
-                        transactionScope.Commit();
-                    }
-                    catch (Exception)
-                    {
-                        transactionScope.Rollback();
-                    }
-                    finally
-                    {
-                        connection.Close();
-                        _dbCommand.Parameters.Clear();
-                    }
-                }
-            }
-        }
-
-        public void Update(string commandText, CommandType commandType)
+        public void Execute(string commandText)
         {
             var connection = GetDatabaseConnection();
-            using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
+            using (_dbCommand = database.CreateCommand(commandText, CommandType.Text, connection))
             {
                 if (parameters.Count > 0)
                 {
@@ -317,72 +427,31 @@ namespace DBHandler.Implementation
             }
         }
 
-        public void UpdateWithTransaction(string commandText, CommandType commandType)
+        public Task ExecuteAsync(string commandText)
         {
-            IDbTransaction transactionScope = null;
-            using (var connection = GetDatabaseConnection())
+            var connection = GetDatabaseConnection();
+            using (_dbCommand = database.CreateCommand(commandText, CommandType.Text, connection))
             {
-                transactionScope = connection.BeginTransaction();
-
-                using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
+                if (parameters.Count > 0)
                 {
-                    if (parameters.Count > 0)
+                    Parallel.ForEach(parameters, (parameter) =>
                     {
-                        Parallel.ForEach(parameters, (parameter) =>
-                        {
-                            _dbCommand.Parameters.Add(parameter);
-                        });
-                    }
-
-                    try
-                    {
-                        _dbCommand.ExecuteNonQuery();
-                        transactionScope.Commit();
-                    }
-                    catch (Exception)
-                    {
-                        transactionScope.Rollback();
-                    }
-                    finally
-                    {
-                        connection.Close();
-                    }
+                        _dbCommand.Parameters.Add(parameter);
+                    });
                 }
+                return Task.FromResult(_dbCommand.ExecuteNonQuery());
             }
         }
+        #endregion
 
-        public void UpdateWithTransaction(string commandText, CommandType commandType, IsolationLevel isolationLevel)
+        public T GetScalarValueSP<T>(string commandText)
         {
-            IDbTransaction transactionScope = null;
-            using (var connection = GetDatabaseConnection())
-            {
-                transactionScope = connection.BeginTransaction(isolationLevel);
+            return GetScalarValue<T>(commandText, CommandType.StoredProcedure);
+        }
 
-                using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
-                {
-                    if (parameters.Count > 0)
-                    {
-                        Parallel.ForEach(parameters, (parameter) =>
-                        {
-                            _dbCommand.Parameters.Add(parameter);
-                        });
-                    }
-
-                    try
-                    {
-                        _dbCommand.ExecuteNonQuery();
-                        transactionScope.Commit();
-                    }
-                    catch (Exception)
-                    {
-                        transactionScope.Rollback();
-                    }
-                    finally
-                    {
-                        connection.Close();
-                    }
-                }
-            }
+        public T GetScalarValueText<T>(string commandText)
+        {
+            return GetScalarValue<T>(commandText, CommandType.Text);
         }
 
         /// <summary>
@@ -392,7 +461,7 @@ namespace DBHandler.Implementation
         /// <param name="commandText">direct sql or stor proc name ler..</param>
         /// <param name="commandType">CommandType</param>
         /// <returns>result int T</returns>
-        public T GetScalarValue<T>(string commandText, CommandType commandType)
+        private T GetScalarValue<T>(string commandText, CommandType commandType)
         {
             var connection = GetDatabaseConnection();
             using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
@@ -414,42 +483,52 @@ namespace DBHandler.Implementation
             }
         }
 
-        public DataTable ExecuteDatatableSQL(string sql)
+        public void BulkInsert<T>(string tableName, IList<T> list)
         {
-            var connection = GetDatabaseConnection();
-            using (_dbCommand = database.CreateCommand(sql, CommandType.Text, connection))
+            if (GetDatabaseConnection() is SqlConnection)
             {
-                if (parameters.Count > 0)
+                SqlConnection sqlConnection = (SqlConnection)GetDatabaseConnection();
+                using (var bulkCopy = new SqlBulkCopy(sqlConnection))
                 {
-                    Parallel.ForEach(parameters, (parameter) =>
+                    bulkCopy.BatchSize = _defaultBulkBatch;
+                    bulkCopy.DestinationTableName = tableName;
+
+                    var table = new DataTable();
+                    var props = GetProps<T>();
+
+                    foreach (var propertyInfo in props)
                     {
-                        _dbCommand.Parameters.Add(parameter);
-                    });
+                        bulkCopy.ColumnMappings.Add(propertyInfo.Name, propertyInfo.Name);
+                        table.Columns.Add(propertyInfo.Name, Nullable.GetUnderlyingType(propertyInfo.PropertyType) ?? propertyInfo.PropertyType);
+                    }
+
+                    var values = new object[props.Length];
+                    foreach (var item in list)
+                    {
+                        for (var i = 0; i < values.Length; i++)
+                        {
+                            values[i] = props[i].GetValue(item);
+                        }
+
+                        table.Rows.Add(values);
+                    }
+
+                    bulkCopy.WriteToServer(table);
                 }
-
-                var dataset = new DataSet();
-                var dataAdaper = database.CreateAdapter();
-                dataAdaper.Fill(dataset);
-                return dataset.Tables[0];
             }
-
         }
-        public IDataReader ExecuteDataReaderSQL(string commandText)
+
+        private static PropertyDescriptor[] GetProps<T>()
         {
-            IDataReader reader = null;
-            var connection = GetDatabaseConnection();
-            _dbCommand = database.CreateCommand(commandText, CommandType.Text, connection);
-            if (parameters.Count > 0)
-            {
-                Parallel.ForEach(parameters, (parameter) =>
-                {
-                    _dbCommand.Parameters.Add(parameter);
-                });
-            }
-            reader = _dbCommand.ExecuteReader();
-
-            return reader;
+            var props = TypeDescriptor.GetProperties(typeof(T))
+                                       //Dirty hack to make sure we only have system data types 
+                                       //i.e. filter out the relationships/collections
+                                       .Cast<PropertyDescriptor>()
+                                       .Where(propertyInfo => propertyInfo.PropertyType.Namespace.Equals(_system))
+                                       .ToArray();
+            return props;
         }
+
         /// <summary>
         /// Faris.. clear all resourses!
         /// </summary>
@@ -466,5 +545,145 @@ namespace DBHandler.Implementation
             parameters = null;
             _dbCommand = null;
         }
+
+        //public void InsertWithTransaction(string commandText, CommandType commandType)
+        //{
+        //    IDbTransaction transactionScope = null;
+        //    using (var connection = GetDatabaseConnection())
+        //    {
+
+        //        transactionScope = connection.BeginTransaction();
+
+        //        using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
+        //        {
+        //            if (parameters.Count > 0)
+        //            {
+        //                Parallel.ForEach(parameters, (parameter) =>
+        //                {
+        //                    _dbCommand.Parameters.Add(parameter);
+        //                });
+        //            }
+
+        //            try
+        //            {
+        //                _dbCommand.ExecuteNonQuery();
+        //                transactionScope.Commit();
+        //            }
+        //            catch (Exception)
+        //            {
+        //                transactionScope.Rollback();
+        //            }
+        //            finally
+        //            {
+        //                connection.Dispose();
+        //                _dbCommand.Parameters.Clear();
+        //            }
+        //        }
+        //    }
+        //}
+
+        //public void InsertWithTransaction(string commandText, CommandType commandType, IsolationLevel isolationLevel)
+        //{
+        //    IDbTransaction transactionScope = null;
+        //    using (var connection = GetDatabaseConnection())
+        //    {
+
+        //        transactionScope = connection.BeginTransaction(isolationLevel);
+
+        //        using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
+        //        {
+        //            if (parameters.Count > 0)
+        //            {
+        //                Parallel.ForEach(parameters, (parameter) =>
+        //                {
+        //                    _dbCommand.Parameters.Add(parameter);
+        //                });
+        //            }
+
+        //            try
+        //            {
+        //                _dbCommand.ExecuteNonQuery();
+        //                transactionScope.Commit();
+        //            }
+        //            catch (Exception)
+        //            {
+        //                transactionScope.Rollback();
+        //            }
+        //            finally
+        //            {
+        //                connection.Close();
+        //                _dbCommand.Parameters.Clear();
+        //            }
+        //        }
+        //    }
+        //}
+
+        //public void UpdateWithTransaction(string commandText, CommandType commandType)
+        //{
+        //    IDbTransaction transactionScope = null;
+        //    using (var connection = GetDatabaseConnection())
+        //    {
+        //        transactionScope = connection.BeginTransaction();
+
+        //        using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
+        //        {
+        //            if (parameters.Count > 0)
+        //            {
+        //                Parallel.ForEach(parameters, (parameter) =>
+        //                {
+        //                    _dbCommand.Parameters.Add(parameter);
+        //                });
+        //            }
+
+        //            try
+        //            {
+        //                _dbCommand.ExecuteNonQuery();
+        //                transactionScope.Commit();
+        //            }
+        //            catch (Exception)
+        //            {
+        //                transactionScope.Rollback();
+        //            }
+        //            finally
+        //            {
+        //                connection.Close();
+        //            }
+        //        }
+        //    }
+        //}
+
+        //public void UpdateWithTransaction(string commandText, CommandType commandType, IsolationLevel isolationLevel)
+        //{
+        //    IDbTransaction transactionScope = null;
+        //    using (var connection = GetDatabaseConnection())
+        //    {
+        //        transactionScope = connection.BeginTransaction(isolationLevel);
+
+        //        using (_dbCommand = database.CreateCommand(commandText, commandType, connection))
+        //        {
+        //            if (parameters.Count > 0)
+        //            {
+        //                Parallel.ForEach(parameters, (parameter) =>
+        //                {
+        //                    _dbCommand.Parameters.Add(parameter);
+        //                });
+        //            }
+
+        //            try
+        //            {
+        //                _dbCommand.ExecuteNonQuery();
+        //                transactionScope.Commit();
+        //            }
+        //            catch (Exception)
+        //            {
+        //                transactionScope.Rollback();
+        //            }
+        //            finally
+        //            {
+        //                connection.Close();
+        //            }
+        //        }
+        //    }
+        //}
     }
 }

@@ -9,9 +9,9 @@ namespace DBHandler.DbProvider
     /// Author : Faris Jaafar
     /// Created Date : FEB 2019
     /// UPDATED : -
-    /// VERSION : 1.0
+    /// VERSION : 2.0
     /// </summary>
-    public sealed class ParameterManager
+    internal sealed class ParameterManager
     {
         public static IDbDataParameter CreateParameter(string providerName, string name, object value, DbType dbType, ParameterDirection direction = ParameterDirection.Input)
         {

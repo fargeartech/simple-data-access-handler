@@ -11,7 +11,7 @@ namespace DBHandler.DbProvider
     /// UPDATED : -
     /// VERSION : 1.0
     /// </summary>
-    public sealed class MsSqlDataProvider : IDBWrapper
+    internal sealed class MsSqlDataProvider : IDBWrapper
     {
         private string ConnectionString { get; set; }
         private bool _disposed;

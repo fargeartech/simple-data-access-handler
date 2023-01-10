@@ -12,12 +12,12 @@ namespace DBHandler.DbProvider
     /// UPDATED : DEC 2020 - SOLVE (USING SYSTEM.DATA.SQLITE library instead of microsoft.data.sqlite)
     /// VERSION : 1.1
     /// </summary>
-    public sealed class SQLLiteDataProvider : IDBWrapper
+    internal sealed class SQLLiteDataProvider : IDBWrapper
     {
         private string ConnectionString { get; set; }
         private IDbConnection _dbConnection;
         private IDbTransaction _dbTransaction;
-        private SQLiteCommand sqlcmd;
+        private SQLiteCommand _sqlcmd;
         private bool _disposed;
         public ConnectionState CurrentConnectionState
         {
@@ -34,7 +34,7 @@ namespace DBHandler.DbProvider
             ConnectionString = connectionString;
             _dbTransaction = null;
             _dbConnection = null;
-            sqlcmd = new SQLiteCommand();
+            _sqlcmd = new SQLiteCommand();
         }
         public void CloseConnection()
         {
@@ -56,25 +56,25 @@ namespace DBHandler.DbProvider
 
         public IDbCommand CreateCommand(string commandText, CommandType commandType, IDbConnection connection)
         {
-            sqlcmd.CommandText = commandText;
-            sqlcmd.Connection = (SQLiteConnection)connection;
-            sqlcmd.CommandType = commandType;
-            return sqlcmd;
+            _sqlcmd.CommandText = commandText;
+            _sqlcmd.Connection = (SQLiteConnection)connection;
+            _sqlcmd.CommandType = commandType;
+            return _sqlcmd;
         }
 
         public IDataAdapter CreateAdapter()
         {
-            return new SQLiteDataAdapter(sqlcmd);
+            return new SQLiteDataAdapter(_sqlcmd);
         }
 
         public IDbDataParameter CreateParameter()
         {
-            return sqlcmd.CreateParameter();
+            return _sqlcmd.CreateParameter();
         }
         public IDbTransaction Begin()
         {
             _dbTransaction = CreateConnection().BeginTransaction();
-            sqlcmd.Transaction = (SQLiteTransaction)_dbTransaction;
+            _sqlcmd.Transaction = (SQLiteTransaction)_dbTransaction;
             return _dbTransaction;
         }
 
@@ -83,7 +83,6 @@ namespace DBHandler.DbProvider
             if (_dbTransaction != null)
             {
                 _dbTransaction.Commit();
-                sqlcmd.Parameters.Clear();
                 _dbTransaction.Dispose();
             }
             else
@@ -94,7 +93,6 @@ namespace DBHandler.DbProvider
             if (_dbTransaction != null)
             {
                 _dbTransaction.Rollback();
-                sqlcmd.Parameters.Clear();
                 _dbTransaction.Dispose();
             }
             else
@@ -113,11 +111,11 @@ namespace DBHandler.DbProvider
                 {
                     if (_dbConnection != null && CurrentConnectionState == ConnectionState.Open)
                         CloseConnection();
-                    sqlcmd.Dispose();
+                    _sqlcmd.Dispose();
 
                     _dbTransaction = null;
                     _dbConnection = null;
-                    sqlcmd = null;
+                    _sqlcmd = null;
                 }
                 _disposed = true;
             }

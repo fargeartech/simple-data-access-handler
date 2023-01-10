@@ -11,7 +11,7 @@ namespace DBHandler.DbProvider
     /// UPDATE : -
     /// VERSION : 1.0
     /// </summary>
-    public sealed class MySQLDataProvider : IDBWrapper
+    internal sealed class MySQLDataProvider : IDBWrapper
     {
         private string ConnectionString { get; set; }
         private IDbConnection _dbConnection;
